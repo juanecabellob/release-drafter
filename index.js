@@ -22,107 +22,99 @@ module.exports = (app, { getRouter }) => {
     })
   }
 
-  app.on(
-    [
-      'pull_request.opened',
-      'pull_request.reopened',
-      'pull_request.synchronize',
-      'pull_request.edited',
-    ],
-    async (context) => {
-      const { disableAutolabeler } = getInput()
+  app.on('pull_request', async (context) => {
+    const { disableAutolabeler } = getInput()
 
-      const config = await getConfig({
-        context,
-        configName: core.getInput('config-name'),
-      })
+    const config = await getConfig({
+      context,
+      configName: core.getInput('config-name'),
+    })
 
-      if (config === null || disableAutolabeler) return
+    if (config === null || disableAutolabeler) return
 
-      let issue = {
-        ...context.issue({ pull_number: context.payload.pull_request.number }),
+    let issue = {
+      ...context.issue({ pull_number: context.payload.pull_request.number }),
+    }
+    const changedFiles = await context.octokit.paginate(
+      context.octokit.pulls.listFiles.endpoint.merge(issue),
+      (res) => res.data.map((file) => file.filename)
+    )
+    const labels = new Set()
+
+    for (const autolabel of config['autolabeler']) {
+      let found = false
+      // check modified files
+      if (!found && autolabel.files.length > 0) {
+        const matcher = ignore().add(autolabel.files)
+        if (changedFiles.find((file) => matcher.ignores(file))) {
+          labels.add(autolabel.label)
+          found = true
+          log({
+            context,
+            message: `Found label for files: '${autolabel.label}'`,
+          })
+        }
       }
-      const changedFiles = await context.octokit.paginate(
-        context.octokit.pulls.listFiles.endpoint.merge(issue),
-        (res) => res.data.map((file) => file.filename)
-      )
-      const labels = new Set()
-
-      for (const autolabel of config['autolabeler']) {
-        let found = false
-        // check modified files
-        if (!found && autolabel.files.length > 0) {
-          const matcher = ignore().add(autolabel.files)
-          if (changedFiles.find((file) => matcher.ignores(file))) {
+      // check branch names
+      if (!found && autolabel.branch.length > 0) {
+        for (const matcher of autolabel.branch) {
+          if (context.payload.pull_request.head.ref.match(matcher)) {
             labels.add(autolabel.label)
             found = true
             log({
               context,
-              message: `Found label for files: '${autolabel.label}'`,
+              message: `Found label for branch: '${autolabel.label}'`,
             })
-          }
-        }
-        // check branch names
-        if (!found && autolabel.branch.length > 0) {
-          for (const matcher of autolabel.branch) {
-            if (context.payload.pull_request.head.ref.match(matcher)) {
-              labels.add(autolabel.label)
-              found = true
-              log({
-                context,
-                message: `Found label for branch: '${autolabel.label}'`,
-              })
-              break
-            }
-          }
-        }
-        // check pr title
-        if (!found && autolabel.title.length > 0) {
-          for (const matcher of autolabel.title) {
-            if (context.payload.pull_request.title.match(matcher)) {
-              labels.add(autolabel.label)
-              found = true
-              log({
-                context,
-                message: `Found label for title: '${autolabel.label}'`,
-              })
-              break
-            }
-          }
-        }
-        // check pr body
-        if (!found && autolabel.body.length > 0) {
-          for (const matcher of autolabel.body) {
-            if (context.payload.pull_request.body.match(matcher)) {
-              labels.add(autolabel.label)
-              found = true
-              log({
-                context,
-                message: `Found label for body: '${autolabel.label}'`,
-              })
-              break
-            }
+            break
           }
         }
       }
-
-      const labelsToAdd = Array.from(labels)
-      if (labelsToAdd.length > 0) {
-        let labelIssue = {
-          ...context.issue({
-            issue_number: context.payload.pull_request.number,
-            labels: labelsToAdd,
-          }),
+      // check pr title
+      if (!found && autolabel.title.length > 0) {
+        for (const matcher of autolabel.title) {
+          if (context.payload.pull_request.title.match(matcher)) {
+            labels.add(autolabel.label)
+            found = true
+            log({
+              context,
+              message: `Found label for title: '${autolabel.label}'`,
+            })
+            break
+          }
         }
-        await context.octokit.issues.addLabels(labelIssue)
-        if (runnerIsActions()) {
-          core.setOutput('number', context.payload.pull_request.number)
-          core.setOutput('labels', labelsToAdd.join(','))
+      }
+      // check pr body
+      if (!found && autolabel.body.length > 0) {
+        for (const matcher of autolabel.body) {
+          if (context.payload.pull_request.body.match(matcher)) {
+            labels.add(autolabel.label)
+            found = true
+            log({
+              context,
+              message: `Found label for body: '${autolabel.label}'`,
+            })
+            break
+          }
         }
-        return
       }
     }
-  )
+
+    const labelsToAdd = Array.from(labels)
+    if (labelsToAdd.length > 0) {
+      let labelIssue = {
+        ...context.issue({
+          issue_number: context.payload.pull_request.number,
+          labels: labelsToAdd,
+        }),
+      }
+      await context.octokit.issues.addLabels(labelIssue)
+      if (runnerIsActions()) {
+        core.setOutput('number', context.payload.pull_request.number)
+        core.setOutput('labels', labelsToAdd.join(','))
+      }
+      return
+    }
+  })
 
   app.on(event, async (context) => {
     const {

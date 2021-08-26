@@ -15,6 +15,11 @@ const ignore = require('ignore')
 
 module.exports = (app, { getRouter }) => {
   const event = runnerIsActions() ? '*' : 'push'
+  core.info('Running!!')
+
+  app.onAny(async (context) => {
+    core.info(context)
+  })
 
   if (!runnerIsActions() && typeof getRouter === 'function') {
     getRouter().get('/healthz', (req, res) => {
@@ -28,6 +33,7 @@ module.exports = (app, { getRouter }) => {
       'pull_request.reopened',
       'pull_request.edited',
       'pull_request.synchronize',
+      'pull_request.*',
     ],
     async (context) => {
       const { disableAutolabeler } = getInput()

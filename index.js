@@ -12,6 +12,7 @@ const log = require('./lib/log')
 const core = require('@actions/core')
 const { runnerIsActions } = require('./lib/utils')
 const ignore = require('ignore')
+core.info('Running!!')
 
 module.exports = (app, { getRouter }) => {
   const event = runnerIsActions() ? '*' : 'push'
@@ -33,7 +34,6 @@ module.exports = (app, { getRouter }) => {
       'pull_request.reopened',
       'pull_request.edited',
       'pull_request.synchronize',
-      'pull_request.*',
     ],
     async (context) => {
       const { disableAutolabeler } = getInput()

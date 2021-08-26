@@ -12,9 +12,15 @@ const log = require('./lib/log')
 const core = require('@actions/core')
 const { runnerIsActions } = require('./lib/utils')
 const ignore = require('ignore')
+core.info('Running!!')
 
 module.exports = (app, { getRouter }) => {
   const event = runnerIsActions() ? '*' : 'push'
+  core.info('Running!!')
+
+  app.onAny(async (context) => {
+    core.info(context)
+  })
 
   if (!runnerIsActions() && typeof getRouter === 'function') {
     getRouter().get('/healthz', (req, res) => {
@@ -26,12 +32,12 @@ module.exports = (app, { getRouter }) => {
     [
       'pull_request.opened',
       'pull_request.reopened',
-      'pull_request.synchronize',
       'pull_request.edited',
+      'pull_request.synchronize',
     ],
     async (context) => {
       const { disableAutolabeler } = getInput()
-
+      core.info('Running auto labeler', context)
       const config = await getConfig({
         context,
         configName: core.getInput('config-name'),
@@ -42,6 +48,7 @@ module.exports = (app, { getRouter }) => {
       let issue = {
         ...context.issue({ pull_number: context.payload.pull_request.number }),
       }
+
       const changedFiles = await context.octokit.paginate(
         context.octokit.pulls.listFiles.endpoint.merge(issue),
         (res) => res.data.map((file) => file.filename)
@@ -49,6 +56,7 @@ module.exports = (app, { getRouter }) => {
       const labels = new Set()
 
       for (const autolabel of config['autolabeler']) {
+        core.info('Autolabel config:', autolabel)
         let found = false
         // check modified files
         if (!found && autolabel.files.length > 0) {
